@@ -1,0 +1,13 @@
+
+dataset/
+	chunk1/
+		array1['key1']
+		array1['key2']
+	chunk2/
+		array2['key1']
+		array2['key2']
+
+Dataset().extend(iterable[dict[matrix]])
+		
+map(funct, dataset)
+reduce(funct, dataset)
