@@ -1,7 +1,8 @@
 from collections.abc import Iterator
-from typing import Hashable
+from typing import Hashable, Callable
 from pathlib import Path
 import pickle
+import functools
 
 import numpy
 import pandas
@@ -126,3 +127,29 @@ class ChunkedArraySet:
             self._chunks.extend(chunks)
         else:
             _write_chunks(chunks, self._dir)
+
+    def run_pipeline(
+        self,
+        map_functs: list[Callable] | None = None,
+        reduce_funct: Callable | None = None,
+        reduce_initialializer=None,
+    ):
+        if map_functs is None:
+            map_functs = []
+
+        def funct(item):
+            processed_item = item
+            for one_funct in map_functs:
+                processed_item = one_funct(processed_item)
+            return processed_item
+
+        processed_chunks = map(funct, self.chunks)
+        result = processed_chunks
+
+        if reduce_funct:
+            reduced_result = functools.reduce(
+                reduce_funct, processed_chunks, reduce_initialializer
+            )
+            result = reduced_result
+
+        return result
