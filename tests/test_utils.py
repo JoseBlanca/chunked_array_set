@@ -30,16 +30,23 @@ def generate_chunks(num_chunks=2, chunk_generator=DEFAULT_CHUNK_GENERATOR):
     return dataset
 
 
-def check_chunks_are_equal(chunks1, chunks2):
-    for arrays1, arrays2 in zip(chunks1, chunks2):
-        assert len(arrays1) == len(arrays2)
-        for array1, array2 in zip(arrays1, arrays2):
-            assert type(array1) == type(array2)
+def check_arrays_in_two_dicts_are_equal(arrays1: dict, arrays2: dict):
+    assert not set(arrays1.keys()).difference(arrays2.keys())
+
+    for id in arrays1.keys():
+        array1 = arrays1[id]
+        array2 = arrays2[id]
+        assert type(array1) == type(array2)
 
         if isinstance(array1, numpy.ndarray):
-            if numpy.issubdtype(array1.dtype, numpy.float):
+            if numpy.issubdtype(array1.dtype, float):
                 assert numpy.allclose(array1, array2)
             else:
                 assert numpy.allequal(array1, array2)
         elif isinstance(array1, pandas.DataFrame):
             assert array1.equals(array2)
+
+
+def check_chunks_are_equal(chunks1, chunks2):
+    for arrays1, arrays2 in zip(chunks1, chunks2):
+        check_arrays_in_two_dicts_are_equal(arrays1, arrays2)
