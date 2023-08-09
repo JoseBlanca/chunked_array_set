@@ -7,7 +7,33 @@ dataset/
 		array2['key1']
 		array2['key2']
 
-Dataset().extend(iterable[dict[matrix]])
-		
-map(funct, dataset)
-reduce(funct, dataset)
+Dataset().chunks = iterable[dict[matrix]]
+
+write_dataset_chunks(iterable[dict[matrix]], dir)
+
+mapper_function(chunk)
+reduce_function(chunk1, result)
+
+Dataset().map_chunks(mapper_function)
+Dataset().run_pipeline(mapper_function, reduce_function)
+
+Dataset()[row_index, ['array1', 'array2']]
+Dataset().extend_chunks(sequence(chunks))
+
+ChunkedArraySet(dir=None, chunks=None)
+
+100, 200, 100
+90, 110
+None, 110
+110, None
+for chunk in chunks:
+	trozo_requerido
+	if not trozo_requerido:
+		break
+
+concatenate(trozos_requeridos)
+test:
+
+- chunks longitud variable con items consecutivos
+- lista con todos los chunks juntos
+función a la que le doy las longitudes de los chunks y el slice y me devuelve cuanto tengo que coger de cada chunk
