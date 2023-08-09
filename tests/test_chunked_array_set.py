@@ -1,8 +1,9 @@
 import tempfile
 import functools
 
-from chunked_array_set import ChunkedArraySet
+import numpy
 
+from chunked_array_set import ChunkedArraySet
 from .test_utils import (
     generate_chunks,
     check_chunks_are_equal,
@@ -57,3 +58,21 @@ def test_pipeline():
     processed_array_set = ChunkedArraySet(chunks=processed_chunks)
 
     check_chunks_are_equal(processed_array_set.chunks, result_chunks)
+
+
+def _check_arrays_equal_to_stacked_chunks(arrays, chunks):
+    for id, array1 in arrays.items():
+        array2 = numpy.vstack([chunk[id] for chunk in chunks])
+        assert numpy.allclose(array1, array2)
+
+
+def test_pipeline():
+    chunks = generate_chunks(num_chunks=2)
+    array_set = ChunkedArraySet(chunks=chunks)
+    arrays = array_set.load_arrays_in_memory()
+    _check_arrays_equal_to_stacked_chunks(arrays, chunks)
+
+    with tempfile.TemporaryDirectory() as dir:
+        array_set = ChunkedArraySet(chunks=chunks, dir=dir)
+        arrays = array_set.load_arrays_in_memory()
+        _check_arrays_equal_to_stacked_chunks(arrays, chunks)

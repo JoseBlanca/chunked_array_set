@@ -17,6 +17,7 @@ def _get_metadata_chunk_path(chunk_dir):
 
 def _write_chunk(chunk_dir, chunk):
     arrays_metadata = []
+    num_rows = None
     for array_id, array in chunk.items():
         type_name = type(array).__name__
         if type_name not in ("DataFrame", "ndarray"):
@@ -31,6 +32,13 @@ def _write_chunk(chunk_dir, chunk):
             numpy.save(array_path, array)
             save_method = "npy"
 
+        this_array_num_rows = array.shape[0]
+        if num_rows is None:
+            num_rows = this_array_num_rows
+        else:
+            if num_rows != this_array_num_rows:
+                raise ValueError("Arrays have different number of rows")
+
         arrays_metadata.append(
             {
                 "type_name": type_name,
@@ -44,6 +52,8 @@ def _write_chunk(chunk_dir, chunk):
     metadata_path = _get_metadata_chunk_path(chunk_dir)
     with metadata_path.open("wb") as fhand:
         pickle.dump(metadata, fhand)
+
+    return {"num_rows": num_rows}
 
 
 def _write_chunks(chunks, dir):
@@ -64,17 +74,23 @@ def _write_chunks(chunks, dir):
         id = idx + num_previous_chunks
         chunk_dir = dir / f"dataset_chunk:{id:08}"
         chunk_dir.mkdir()
-        _write_chunk(chunk_dir, chunk)
-        chunks_metadata.append({"id": id, "dir": chunk_dir})
+        res = _write_chunk(chunk_dir, chunk)
+        num_rows = res["num_rows"]
+        chunks_metadata.append({"id": id, "dir": chunk_dir, "num_rows": num_rows})
 
     with metadata_path.open("wb") as fhand:
         pickle.dump(metadata, fhand)
 
 
-def _load_chunk(chunk_dir):
+def _get_array_set_metadata(chunk_dir):
     metadata_path = _get_metadata_chunk_path(chunk_dir)
     with metadata_path.open("rb") as fhand:
         metadata = pickle.load(fhand)
+    return metadata
+
+
+def _load_chunk(chunk_dir):
+    metadata = _get_array_set_metadata(chunk_dir)
 
     arrays = {}
     for array_metadata in metadata["arrays_metadata"]:
@@ -95,6 +111,14 @@ def _load_chunks(dir):
     for chunk_metadata in chunks_metadata:
         chunk_dir = chunk_metadata["dir"]
         yield _load_chunk(chunk_dir)
+
+
+def _pandas_empty_like(array, shape):
+    # check
+    # column names and types
+
+    raise NotImplemented("Fixme")
+    return dframe
 
 
 class ChunkedArraySet:
@@ -153,3 +177,46 @@ class ChunkedArraySet:
             result = reduced_result
 
         return result
+
+    def _get_num_rows_per_chunk(self):
+        if self._in_memory:
+            num_rows = []
+            for chunk in self.chunks:
+                try:
+                    one_array = next(iter(chunk.values()))
+                except StopIteration:
+                    raise RuntimeError("Chunk with no arrays")
+                if isinstance(one_array, (pandas.DataFrame, numpy.ndarray)):
+                    num_rows_this_chunk = one_array.shape[0]
+                num_rows.append(num_rows_this_chunk)
+        else:
+            metadata = _get_array_set_metadata(self._dir)
+            chunks_metadata = metadata["chunks_metadata"]
+            num_rows = [
+                chunk_metadata["num_rows"] for chunk_metadata in chunks_metadata
+            ]
+        return num_rows
+
+    def load_arrays_in_memory(self):
+        num_rows = sum(self._get_num_rows_per_chunk())
+
+        arrays = {}
+        row_start = 0
+        for chunk in self.chunks:
+            row_end = None
+            for id, array_chunk in chunk.items():
+                if id not in arrays:
+                    shape = list(array_chunk.shape)
+                    shape[0] = num_rows
+                    if isinstance(array_chunk, numpy.ndarray):
+                        array = numpy.empty_like(array_chunk, shape=shape)
+                    elif isinstance(array_chunk, pandas.DataFrame):
+                        array = _pandas_empty_like(array, shape)
+                    arrays[id] = array
+                else:
+                    array = arrays[id]
+                if row_end is None:
+                    row_end = row_start + array_chunk.shape[0]
+                array[row_start:row_end, :] = array_chunk
+            row_start = row_end
+        return arrays
