@@ -9,7 +9,7 @@ def test_write_chunked_array_set():
     chunks = generate_chunks(num_chunks=2)
     with tempfile.TemporaryDirectory() as dir:
         disk_array_set = ChunkedArraySet(dir=dir, chunks=chunks)
-        mem_array_set = ChunkedArraySet(dir=dir)
+        mem_array_set = ChunkedArraySet(chunks=chunks)
         assert len(list(disk_array_set.chunks)) == 2
         check_chunks_are_equal(mem_array_set.chunks, chunks)
         check_chunks_are_equal(disk_array_set.chunks, mem_array_set.chunks)
