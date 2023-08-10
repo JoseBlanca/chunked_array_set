@@ -132,6 +132,7 @@ class ChunkedArraySet:
     ):
         if dir:
             dir = Path(dir)
+            dir.mkdir(exist_ok=True)
             self._in_memory = False
         else:
             self._in_memory = True
@@ -159,6 +160,8 @@ class ChunkedArraySet:
             with (self._dir / USER_METADATA_FNAME).open("wt") as fhand:
                 metadata = json.load(fhand)
         return metadata
+
+    metadata = property(_get_metadata, _set_metadata)
 
     @property
     def chunks(self):
