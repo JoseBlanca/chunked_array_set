@@ -76,3 +76,11 @@ def test_pipeline():
         array_set = ChunkedArraySet(chunks=chunks, dir=dir)
         arrays = array_set.load_arrays_in_memory()
         _check_arrays_equal_to_stacked_chunks(arrays, chunks)
+
+
+def test_metadata():
+    chunks = generate_chunks(num_chunks=2)
+    with tempfile.TemporaryDirectory() as dir:
+        array_set = ChunkedArraySet(chunks=chunks, dir=dir)
+        array_set.metadata = "hola"
+        assert array_set.metadata == "hola"

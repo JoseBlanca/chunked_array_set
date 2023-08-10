@@ -3,12 +3,14 @@ from typing import Hashable, Callable
 from pathlib import Path
 import pickle
 import functools
+import json
 
 import numpy
 import pandas
 
 Array = tuple[numpy.ndarray, pandas.DataFrame]
 ARRAY_FILE_EXTENSIONS = {"DataFrame": ".parquet", "ndarray": ".npy"}
+USER_METADATA_FNAME = "user_metadata.json"
 
 
 def _get_metadata_chunk_path(chunk_dir):
@@ -126,6 +128,7 @@ class ChunkedArraySet:
         self,
         chunks: Iterator[dict[Hashable, Array]] | None = None,
         dir: Path | None = None,
+        metadata=None,
     ):
         if dir:
             dir = Path(dir)
@@ -135,9 +138,27 @@ class ChunkedArraySet:
 
         self._dir = dir
 
+        self._metadata = None
+        self.metadata = metadata
+
         self._chunks = []
         if chunks:
             self.extend_chunks(chunks)
+
+    def _set_metadata(self, metadata):
+        if self._in_memory:
+            self._metadata = metadata
+        else:
+            with (self._dir / USER_METADATA_FNAME).open("wt") as fhand:
+                json.dump(metadata, fhand)
+
+    def _get_metadata(self):
+        if self._in_memory:
+            metadata = self._metadata
+        else:
+            with (self._dir / USER_METADATA_FNAME).open("wt") as fhand:
+                metadata = json.load(fhand)
+        return metadata
 
     @property
     def chunks(self):
