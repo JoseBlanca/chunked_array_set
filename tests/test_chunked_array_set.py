@@ -16,9 +16,9 @@ def test_write_chunked_array_set():
     with tempfile.TemporaryDirectory() as dir:
         disk_array_set = ChunkedArraySet(dir=dir, chunks=chunks)
         mem_array_set = ChunkedArraySet(chunks=chunks)
-        assert len(list(disk_array_set.chunks)) == 2
-        check_chunks_are_equal(mem_array_set.chunks, chunks)
-        check_chunks_are_equal(disk_array_set.chunks, mem_array_set.chunks)
+        assert len(list(disk_array_set.get_chunks())) == 2
+        check_chunks_are_equal(mem_array_set.get_chunks(), chunks)
+        check_chunks_are_equal(disk_array_set.get_chunks(), mem_array_set.get_chunks())
 
         new_chunks = generate_chunks(num_chunks=3)
         chunks.extend(new_chunks)
@@ -94,3 +94,17 @@ def test_num_rows():
 
     array_set = ChunkedArraySet(chunks=chunks)
     assert array_set.num_rows == 10
+
+
+def test_get_chunks():
+    chunks = generate_chunks(num_chunks=2)
+    with tempfile.TemporaryDirectory() as dir:
+        array_set = ChunkedArraySet(chunks=chunks, dir=dir)
+        chunks = array_set.get_chunks(desired_arrays=[1])
+        assert not set(
+            array_id for chunk in chunks for array_id in list(chunk.keys())
+        ).difference(
+            {
+                1,
+            }
+        )

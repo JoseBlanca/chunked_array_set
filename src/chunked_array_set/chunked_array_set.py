@@ -91,20 +91,23 @@ def _get_array_set_metadata(chunk_dir):
     return metadata
 
 
-def _load_chunk(chunk_dir):
+def _load_chunk(chunk_dir, desired_arrays):
     metadata = _get_array_set_metadata(chunk_dir)
 
     arrays = {}
     for array_metadata in metadata["arrays_metadata"]:
+        id = array_metadata["id"]
+        if desired_arrays and id not in desired_arrays:
+            continue
         if array_metadata["save_method"] == "parquet":
             array = pandas.read_parquet(array_metadata["array_path"])
         elif array_metadata["save_method"] == "npy":
             array = numpy.load(array_metadata["array_path"])
-        arrays[array_metadata["id"]] = array
+        arrays[id] = array
     return arrays
 
 
-def _load_chunks(dir):
+def _load_chunks(dir, desired_arrays: list | None):
     metadata_path = _get_metadata_chunk_path(dir)
     with metadata_path.open("rb") as fhand:
         metadata = pickle.load(fhand)
@@ -112,7 +115,7 @@ def _load_chunks(dir):
 
     for chunk_metadata in chunks_metadata:
         chunk_dir = chunk_metadata["dir"]
-        yield _load_chunk(chunk_dir)
+        yield _load_chunk(chunk_dir, desired_arrays=desired_arrays)
 
 
 def _pandas_empty_like(array, shape):
@@ -140,7 +143,8 @@ class ChunkedArraySet:
         self._dir = dir
 
         self._metadata = None
-        self.metadata = metadata
+        if metadata is not None:
+            self.metadata = metadata
 
         self._chunks = []
         if chunks:
@@ -157,18 +161,20 @@ class ChunkedArraySet:
         if self._in_memory:
             metadata = self._metadata
         else:
-            with (self._dir / USER_METADATA_FNAME).open("rt") as fhand:
-                metadata = json.load(fhand)
+            try:
+                with (self._dir / USER_METADATA_FNAME).open("rt") as fhand:
+                    metadata = json.load(fhand)
+            except FileNotFoundError:
+                metadata = None
         return metadata
 
     metadata = property(_get_metadata, _set_metadata)
 
-    @property
-    def chunks(self):
+    def get_chunks(self, desired_arrays: list | None = None):
         if self._chunks:
             return iter(self._chunks)
         if self._dir:
-            return _load_chunks(self._dir)
+            return _load_chunks(self._dir, desired_arrays=desired_arrays)
 
     def extend_chunks(self, chunks: Iterator[dict[Hashable, Array]]):
         if self._in_memory:
@@ -205,7 +211,7 @@ class ChunkedArraySet:
     def _get_num_rows_per_chunk(self):
         if self._in_memory:
             num_rows = []
-            for chunk in self.chunks:
+            for chunk in self.get_chunks():
                 try:
                     one_array = next(iter(chunk.values()))
                 except StopIteration:
@@ -230,7 +236,7 @@ class ChunkedArraySet:
 
         arrays = {}
         row_start = 0
-        for chunk in self.chunks:
+        for chunk in self.get_chunks():
             row_end = None
             for id, array_chunk in chunk.items():
                 if id not in arrays:
