@@ -221,8 +221,12 @@ class ChunkedArraySet:
             ]
         return num_rows
 
+    @property
+    def num_rows(self):
+        return sum(self._get_num_rows_per_chunk())
+
     def load_arrays_in_memory(self):
-        num_rows = sum(self._get_num_rows_per_chunk())
+        num_rows = self.num_rows
 
         arrays = {}
         row_start = 0

@@ -84,3 +84,13 @@ def test_metadata():
         array_set = ChunkedArraySet(chunks=chunks, dir=dir)
         array_set.metadata = "hola"
         assert array_set.metadata == "hola"
+
+
+def test_num_rows():
+    chunks = generate_chunks(num_chunks=2)
+    with tempfile.TemporaryDirectory() as dir:
+        array_set = ChunkedArraySet(chunks=chunks, dir=dir)
+        assert array_set.num_rows == 10
+
+    array_set = ChunkedArraySet(chunks=chunks)
+    assert array_set.num_rows == 10
