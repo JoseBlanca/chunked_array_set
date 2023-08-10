@@ -157,7 +157,7 @@ class ChunkedArraySet:
         if self._in_memory:
             metadata = self._metadata
         else:
-            with (self._dir / USER_METADATA_FNAME).open("wt") as fhand:
+            with (self._dir / USER_METADATA_FNAME).open("rt") as fhand:
                 metadata = json.load(fhand)
         return metadata
 
