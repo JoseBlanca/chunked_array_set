@@ -119,11 +119,11 @@ def _load_chunks(dir, desired_arrays: list | None):
 
 
 def _pandas_empty_like(array, shape):
-    # check
-    # column names and types
-
-    raise NotImplemented("Fixme")
-    return dframe
+    empty_array = {}
+    for col, data in array.items():
+        empty_array[col] = numpy.empty(shape=(shape[0],), dtype=data.dtype)
+    empty_array = pandas.DataFrame(empty_array)
+    return empty_array
 
 
 class ChunkedArraySet:
@@ -184,6 +184,7 @@ class ChunkedArraySet:
 
     def run_pipeline(
         self,
+        desired_arrays_to_load_in_chunk=None,
         map_functs: list[Callable] | None = None,
         reduce_funct: Callable | None = None,
         reduce_initialializer=None,
@@ -197,7 +198,9 @@ class ChunkedArraySet:
                 processed_item = one_funct(processed_item)
             return processed_item
 
-        processed_chunks = map(funct, self.chunks)
+        processed_chunks = map(
+            funct, self.get_chunks(desired_arrays=desired_arrays_to_load_in_chunk)
+        )
         result = processed_chunks
 
         if reduce_funct:
@@ -232,25 +235,32 @@ class ChunkedArraySet:
         return sum(self._get_num_rows_per_chunk())
 
     def load_arrays_in_memory(self):
-        num_rows = self.num_rows
+        return collect_chunks_in_memory(self.get_chunks(), self.num_rows)
 
-        arrays = {}
-        row_start = 0
-        for chunk in self.get_chunks():
-            row_end = None
-            for id, array_chunk in chunk.items():
-                if id not in arrays:
-                    shape = list(array_chunk.shape)
-                    shape[0] = num_rows
-                    if isinstance(array_chunk, numpy.ndarray):
-                        array = numpy.empty_like(array_chunk, shape=shape)
-                    elif isinstance(array_chunk, pandas.DataFrame):
-                        array = _pandas_empty_like(array, shape)
-                    arrays[id] = array
-                else:
-                    array = arrays[id]
-                if row_end is None:
-                    row_end = row_start + array_chunk.shape[0]
+
+def collect_chunks_in_memory(chunks, num_rows):
+    arrays = {}
+    row_start = 0
+    for chunk in chunks:
+        row_end = None
+        for id, array_chunk in chunk.items():
+            if id not in arrays:
+                shape = list(array_chunk.shape)
+                shape[0] = num_rows
+                if isinstance(array_chunk, numpy.ndarray):
+                    array = numpy.empty_like(array_chunk, shape=shape)
+                elif isinstance(array_chunk, pandas.DataFrame):
+                    array = _pandas_empty_like(array_chunk, shape)
+                arrays[id] = array
+            else:
+                array = arrays[id]
+            if row_end is None:
+                row_end = row_start + array_chunk.shape[0]
+
+            if isinstance(array_chunk, numpy.ndarray):
                 array[row_start:row_end, :] = array_chunk
-            row_start = row_end
-        return arrays
+            elif isinstance(array_chunk, pandas.DataFrame):
+                for col in array.columns():
+                    array[col][row_start:row_end] = array_chunk[col]
+        row_start = row_end
+    return arrays
