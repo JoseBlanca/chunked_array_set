@@ -184,7 +184,7 @@ class ChunkedArraySet:
 
     def run_pipeline(
         self,
-        desired_arrays_to_load_in_chunk=None,
+        desired_arrays_to_load_in_chunk: list | None = None,
         map_functs: list[Callable] | None = None,
         reduce_funct: Callable | None = None,
         reduce_initialializer=None,
@@ -235,10 +235,37 @@ class ChunkedArraySet:
         return sum(self._get_num_rows_per_chunk())
 
     def load_arrays_in_memory(self):
-        return collect_chunks_in_memory(self.get_chunks(), self.num_rows)
+        return _collect_chunks_in_memory(self.get_chunks(), self.num_rows)
 
 
-def collect_chunks_in_memory(chunks, num_rows):
+def _pandas_empty_like(array, shape):
+    empty_array = {}
+    for col, data in array.items():
+        empty_array[col] = numpy.empty(shape=(shape[0],), dtype=data.dtype)
+    empty_array = pandas.DataFrame(empty_array)
+    return empty_array
+
+
+def create_empty_array_like(sample_array, num_rows):
+    shape = list(sample_array.shape)
+    shape[0] = num_rows
+
+    if isinstance(sample_array, numpy.ndarray):
+        array = numpy.empty_like(sample_array, shape=shape)
+    elif isinstance(sample_array, pandas.DataFrame):
+        array = _pandas_empty_like(sample_array, shape)
+    return array
+
+
+def set_array_chunk(complete_array, array_chunk, row_start, row_end):
+    if isinstance(array_chunk, numpy.ndarray):
+        complete_array[row_start:row_end, :] = array_chunk
+    elif isinstance(array_chunk, pandas.DataFrame):
+        for col in complete_array.columns:
+            complete_array[col][row_start:row_end] = array_chunk[col]
+
+
+def _collect_chunks_in_memory(chunks, num_rows):
     arrays = {}
     row_start = 0
     for chunk in chunks:
@@ -260,7 +287,7 @@ def collect_chunks_in_memory(chunks, num_rows):
             if isinstance(array_chunk, numpy.ndarray):
                 array[row_start:row_end, :] = array_chunk
             elif isinstance(array_chunk, pandas.DataFrame):
-                for col in array.columns():
+                for col in array.columns:
                     array[col][row_start:row_end] = array_chunk[col]
         row_start = row_end
     return arrays
