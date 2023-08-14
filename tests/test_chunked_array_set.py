@@ -3,7 +3,7 @@ import functools
 
 import numpy
 
-from chunked_array_set import ChunkedArraySet
+from chunked_array_set import ChunkedArraySet, concatenate_chunks
 from .test_utils import (
     generate_chunks,
     check_chunks_are_equal,
@@ -24,6 +24,18 @@ def test_write_chunked_array_set():
         chunks.extend(new_chunks)
         mem_array_set.extend_chunks(new_chunks)
         disk_array_set.extend_chunks(new_chunks)
+
+
+def test_chunks_different_num_rows():
+    chunks = generate_chunks(num_chunks=2)
+    chunks = list(chunks)
+    expected_arrays = concatenate_chunks(chunks)
+    num_rows_expected = {3: [3, 3, 3, 1], 5: [5, 5], 20: [10]}
+    for num_rows, expected_rows_in_chunks in num_rows_expected.items():
+        array_set = ChunkedArraySet(chunks=chunks, desired_num_rows_per_chunk=num_rows)
+        assert array_set._get_num_rows_per_chunk() == expected_rows_in_chunks
+        arrays = concatenate_chunks(array_set._chunks)
+        check_chunks_are_equal([arrays], [expected_arrays])
 
 
 def test_pipeline():

@@ -4,6 +4,7 @@ from pathlib import Path
 import pickle
 import functools
 import json
+from collections import defaultdict
 
 import numpy
 import pandas
@@ -132,6 +133,7 @@ class ChunkedArraySet:
         chunks: Iterator[dict[Hashable, Array]] | None = None,
         dir: Path | None = None,
         metadata=None,
+        desired_num_rows_per_chunk: int | None = None,
     ):
         if dir:
             dir = Path(dir)
@@ -141,6 +143,8 @@ class ChunkedArraySet:
             self._in_memory = True
 
         self._dir = dir
+
+        self._desired_num_rows_per_chunk = desired_num_rows_per_chunk
 
         self._metadata = None
         if metadata is not None:
@@ -177,6 +181,11 @@ class ChunkedArraySet:
             return _load_chunks(self._dir, desired_arrays=desired_arrays)
 
     def extend_chunks(self, chunks: Iterator[dict[Hashable, Array]]):
+        if self._desired_num_rows_per_chunk:
+            chunks = _normalize_num_rows_in_chunk(
+                chunks, self._desired_num_rows_per_chunk
+            )
+
         if self._in_memory:
             self._chunks.extend(chunks)
         else:
@@ -238,6 +247,91 @@ class ChunkedArraySet:
         return _collect_chunks_in_memory(self.get_chunks(), self.num_rows)
 
 
+def _get_num_rows_in_chunk(buffered_chunk):
+    if not buffered_chunk:
+        return 0
+    else:
+        return list(buffered_chunk.values())[0].shape[0]
+
+
+def _fill_buffer(buffered_chunk, chunks, desired_num_rows):
+    num_rows_in_buffer = _get_num_rows_in_chunk(buffered_chunk)
+    if num_rows_in_buffer >= desired_num_rows:
+        return buffered_chunk, False
+
+    chunks_to_concat = []
+    if num_rows_in_buffer:
+        chunks_to_concat.append(buffered_chunk)
+
+    total_num_rows = num_rows_in_buffer
+    no_chunks_remaining = True
+    for chunk in chunks:
+        total_num_rows += _get_num_rows_in_chunk(chunk)
+        chunks_to_concat.append(chunk)
+        if total_num_rows >= desired_num_rows:
+            no_chunks_remaining = False
+            break
+
+    if not chunks_to_concat:
+        buffered_chunk = None
+    elif len(chunks_to_concat) > 1:
+        buffered_chunk = concatenate_chunks(chunks_to_concat)
+    else:
+        buffered_chunk = chunks_to_concat[0]
+    return buffered_chunk, no_chunks_remaining
+
+
+def _yield_chunks_from_buffer(buffered_chunk, desired_num_rows):
+    num_rows_in_buffer = _get_num_rows_in_chunk(buffered_chunk)
+    if num_rows_in_buffer == desired_num_rows:
+        chunks_to_yield = [buffered_chunk]
+        buffered_chunk = None
+        return buffered_chunk, chunks_to_yield
+
+    start_row = 0
+    chunks_to_yield = []
+    end_row = None
+    while True:
+        previous_end_row = end_row
+        end_row = start_row + desired_num_rows
+        if end_row <= num_rows_in_buffer:
+            chunks_to_yield.append(
+                get_rows_from_chunk(buffered_chunk, start_row, end_row)
+            )
+        else:
+            end_row = previous_end_row
+            break
+        start_row = end_row
+
+    remainder = get_rows_from_chunk(buffered_chunk, end_row, None)
+    buffered_chunk = remainder
+    return buffered_chunk, chunks_to_yield
+
+
+def _normalize_num_rows_in_chunk(chunks, desired_num_rows):
+    buffered_chunk = None
+    chunks = iter(chunks)
+
+    while True:
+        # fill buffer with equal or more than desired
+        buffered_chunk, no_chunks_remaining = _fill_buffer(
+            buffered_chunk, chunks, desired_num_rows
+        )
+        # yield chunks until buffer less than desired
+        num_rows_in_buffer = _get_num_rows_in_chunk(buffered_chunk)
+        if not num_rows_in_buffer:
+            break
+        buffered_chunk, chunks_to_yield = _yield_chunks_from_buffer(
+            buffered_chunk, desired_num_rows
+        )
+        for chunk in chunks_to_yield:
+            yield chunk
+
+        if no_chunks_remaining:
+            yield buffered_chunk
+            break
+
+
 def _pandas_empty_like(array, shape):
     empty_array = {}
     for col, data in array.items():
@@ -263,6 +357,48 @@ def set_array_chunk(complete_array, array_chunk, row_start, row_end):
     elif isinstance(array_chunk, pandas.DataFrame):
         for col in complete_array.columns:
             complete_array[col][row_start:row_end] = array_chunk[col]
+
+
+def get_rows_from_chunk(chunk, row_start, row_end):
+    small_chunk = {}
+    for array_id, array in chunk.items():
+        if isinstance(array, numpy.ndarray):
+            small_array = array[row_start:row_end, :]
+        elif isinstance(array, pandas.DataFrame):
+            small_array = array.iloc[row_start:row_end, :]
+        small_chunk[array_id] = small_array
+    return small_chunk
+
+
+def filter_array_chunk_rows(array_chunk, rows_to_keep):
+    if isinstance(array_chunk, numpy.ndarray):
+        array_chunk = array_chunk[rows_to_keep, ...]
+    elif isinstance(array_chunk, pandas.DataFrame):
+        array_chunk = array_chunk.loc[rows_to_keep, :]
+    return array_chunk
+
+
+def concatenate_chunks(array_chunks: list[dict]):
+    if len(array_chunks) == 1:
+        return array_chunks[0]
+
+    arrays_to_concatenate = defaultdict(list)
+    for chunk in array_chunks:
+        for array_id, array in chunk.items():
+            arrays_to_concatenate[array_id].append(array)
+
+    num_arrays = [len(arrays) for arrays in arrays_to_concatenate.values()]
+    if not all([num_arrays[0] == len_ for len_ in num_arrays]):
+        raise ValueError("Nota all chunks have the same arrays")
+
+    concatenated_chunk = {}
+    for array_id, arrays in arrays_to_concatenate.items():
+        if isinstance(arrays[0], numpy.ndarray):
+            array = numpy.vstack(arrays)
+        elif isinstance(arrays[0], pandas.DataFrame):
+            array = pandas.concat(arrays, axis=0)
+        concatenated_chunk[array_id] = array
+    return concatenated_chunk
 
 
 def _collect_chunks_in_memory(chunks, num_rows):
